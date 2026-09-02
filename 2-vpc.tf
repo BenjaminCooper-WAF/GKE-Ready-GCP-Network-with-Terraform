@@ -1,18 +1,3 @@
-# STAGE 2: VPC FOUNDATION
-# Goal:
-# - Enable required APIs
-# - Create custom VPC
-#
-# Verify:
-# - Compute API enabled
-# - VPC named "main" exists
-#
-# Screenshot required:
-# - API page
-# - VPC Networks page
-
-
-# https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/google_project_service
 resource "google_project_service" "compute" {
   service = "compute.googleapis.com"
   disable_on_destroy = false

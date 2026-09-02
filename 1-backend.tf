@@ -10,9 +10,9 @@ terraform {
 }
 
 
-resource "google_compute_disk" "class7point5" {
+resource "google_compute_disk" "grafana_disk" {
   #depends_on = [terraform_data.preflight_gate]
-  name  = "class7point5"
+  name  = "grafana-disk"
   type  = "pd-standard"
   zone  = "us-central1-a"
   size  = 10

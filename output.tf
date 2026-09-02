@@ -1,5 +1,5 @@
 output "vpc_name" {
-  description = "Name of the VPC"
+  description = "VPC Name"
   value       = google_compute_network.blacksuperman.name
 }
 

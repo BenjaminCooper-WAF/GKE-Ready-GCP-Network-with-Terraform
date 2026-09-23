@@ -1,80 +1,105 @@
-# Terraform GCP VPC & Static Site Provisioner
+# GKE-Ready GCP Network with Terraform
 
-![GCP](https://img.shields.io/badge/GCP-CLOUD-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)
-![Terraform](https://img.shields.io/badge/TERRAFORM-%E2%89%A51.9-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
-![VPC](https://img.shields.io/badge/VPC-NETWORKING-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)
-![Cloud Storage](https://img.shields.io/badge/CLOUD%20STORAGE-STATIC%20SITE-34A853?style=for-the-badge&logo=googlecloud&logoColor=white)
-![HTML/CSS](https://img.shields.io/badge/HTML%2FCSS-STATIC%20SITE-E34F26?style=for-the-badge&logo=html5&logoColor=white)
+![Google Cloud](https://img.shields.io/badge/Google%20Cloud-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)![Terraform](https://img.shields.io/badge/Terraform-%E2%89%A51.9-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)![Google Provider](https://img.shields.io/badge/google%20provider-~%3E5.0-4285F4?style=for-the-badge&logo=terraform&logoColor=white) ![IaC](https://img.shields.io/badge/Infrastructure%20as%20Code-blueviolet?style=for-the-badge)![VPC](https://img.shields.io/badge/VPC-custom%20mode-34A853?style=for-the-badge&logo=googlecloud&logoColor=white)
+![Subnets](https://img.shields.io/badge/Subnet-GKE%20secondary%20ranges-FBBC04?style=for-the-badge&logo=googlecloud&logoColor=black)![Cloud Router](https://img.shields.io/badge/Cloud%20Router-regional-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)![Cloud NAT](https://img.shields.io/badge/Cloud%20NAT-private%20egress-FBBC04?style=for-the-badge&logo=googlecloud&logoColor=black)![GKE Ready](https://img.shields.io/badge/GKE-ready-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)![Compute Engine](https://img.shields.io/badge/Persistent%20Disk-10%20GB-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)![Cloud Storage](https://img.shields.io/badge/Cloud%20Storage-private%20bucket-EA4335?style=for-the-badge&logo=googlecloud&logoColor=white)
+![Remote State](https://img.shields.io/badge/Remote%20State-GCS%20backend-EA4335?style=for-the-badge&logo=googlecloud&logoColor=white)![HTML/CSS](https://img.shields.io/badge/HTML%2FCSS-static%20site-E34F26?style=for-the-badge&logo=html5&logoColor=white)
 
-## What this is
+## Mission Objective
 
-A small but complete Infrastructure-as-Code project — the network, subnet, router, storage bucket, and static site sitting in it are all defined as code, stood up with `terraform` commands, and backed by remote state in a GCS bucket instead of my laptop.
+I built a Google Cloud network using only Terraform, so the whole thing can be created, changed and torn down with a few commands. It's designed to host a Kubernetes (GKE) cluster later, and Terraform's state is kept in a cloud bucket instead of on my laptop.
 
-I split the configuration into small, purpose-named files (`1-backend.tf`, `2-vpc.tf`, `3-subnets.tf`, `router.tf`, `main.tf`, `authentication.tf`) instead of dumping everything into one giant `main.tf`. It's a habit I picked up specifically because it makes it obvious where to look when something breaks.
+**What it builds:**
 
-## What actually gets built
+* A custom VPC network
+* A private subnet with IP ranges set aside for Kubernetes nodes, pods and services
+* A Cloud Router and Cloud NAT, so private resources can reach the internet without public IPs
+* A 10 GB persistent disk for Grafana dashboards
+* A private Cloud Storage bucket holding a small static website
+* A local text file, created with the Terraform `local` provider
 
-* **A custom VPC** (`blacksuperman`) — no default subnets, regional routing mode, so I control the address space instead of Google auto-assigning it
-* **A private subnet** (`private-subnet`) in `us-central1` with a primary range and two secondary ranges carved out for future GKE pod/service IPs — private Google access is turned on so resources inside it can reach Google APIs without a public IP
-* **A Cloud Router** wired to that VPC (BGP ASN `64514`), the piece that would let this network talk to on-prem or other VPCs via Cloud NAT/VPN down the line
-* **A GCS bucket** (`benji2dmax-static`) configured for uniform bucket-level access, hosting a tiny static site — `index.html`, `404.html`, `style.css`, and an image
-* **A local file resource**, just to prove out `local_file` for generating config/output files outside of any cloud provider
-* **Enabled APIs** (`compute.googleapis.com`, `container.googleapis.com`) via `google_project_service`, so the project doesn't fail on a fresh GCP project with those APIs off
+![Architecture diagram](Images/00-architecture.png "Architecture overview")
+
+## Checkpoints
+
+1. [Prerequisites](#prerequisites)
+2. [Step 1 - Network](#step-1---network)
+3. [Step 2 - Router and NAT](#step-2---router-and-nat)
+4. [Step 3 - Storage Bucket](#step-3---storage-bucket)
+5. [Step 4 - Local File](#step-4---local-file)
+6. [Step 5 - Deploy with Terraform](#step-5---deploy-with-terraform)
+7. [Step 6 - Output](#step-6---output)
+8. [Errors](#errors)
+9. [Deliverables](#deliverables)
+10. [Final Step - Teardown](#final-step---teardown)
 
 ## Prerequisites
 
-* Terraform >= 1.9
-* `gcloud` CLI authenticated against a GCP project
-* A GCS bucket created ahead of time for remote state (Terraform can't bootstrap the backend it's about to use)
+* Terraform 1.9 or higher
+* The `gcloud` CLI, signed in to a GCP project
+* A Cloud Storage bucket created ahead of time to hold Terraform state
 
-## Walkthrough
+## Step 1 - Network
 
-### 1. Init & validate
+The VPC has no automatic subnets, so I control the address space. One private subnet sits inside it, with Private Google Access turned on so its resources can reach Google APIs without a public IP. It has a range for nodes plus two extra ranges reserved for Kubernetes pods and services.
 
-`terraform init` pulls the `hashicorp/google` provider and wires up the GCS backend; `terraform validate` catches syntax and internal-consistency issues before anything touches real infrastructure.
+Terraform also switches on the Compute and Kubernetes Engine APIs, so this works on a brand-new project.
 
-![terraform init output](Images/01-terraform-init.png "terraform init")
-![terraform validate output](Images/02-terraform-validate.png "terraform validate")
-
-### 2. Plan
-
-`terraform plan` refreshes state against what's actually deployed and prints the diff — what gets created, changed, or destroyed — before I commit to anything.
-
-![terraform plan output](Images/03-terraform-plan.png "terraform plan")
-
-### 3. Apply
-
-`terraform apply -auto-approve` executes that plan. In this run it tore down an older subnet/network (I'd renamed the VPC, which forces a replace) and rebuilt everything — network, subnet, router — then pushed the site files into the bucket. Finished clean: **6 added, 1 changed, 2 destroyed**.
-
-![terraform apply complete](Images/04-terraform-apply-complete.png "terraform apply -auto-approve")
-
-### 4. Confirm the bucket
-
-Back in the GCP console, the `benji2dmax-static` bucket has exactly the four objects Terraform uploaded: `404.html`, `images.jpg`, `index.html`, `style.css` — sizes and content types all correct, uniform access enforced, nothing public.
-
-![GCS bucket objects](Images/05-gcs-bucket-objects.png "GCS bucket contents")
-
-### 5. Check the output
-
-`output.tf` exposes `vpc_name` so anything downstream (a script, a CI pipeline, another Terraform module) can reference the network by name without hardcoding it. Running `terraform output` confirms it resolves to `blacksuperman`.
-
-![terraform output vpc_name](Images/06-terraform-output-vpc-name.png "vpc_name output")
-
-### 6. Verify the subnet
-
-Last check, back in the console under **VPC network → Subnets**: `private-subnet` exists in `us-central1` with the primary range `10.0.0.0/18` and the secondary range `10.48.0.0/14` visible — matching what's declared in `3-subnets.tf`.
+In the GCP console, under **VPC network → Subnets**, the subnet and its secondary ranges show up as expected.
 
 ![VPC subnet details](Images/07-vpc-subnet-details.png "private-subnet details")
 
-## Teardown
+## Step 2 - Router and NAT
 
-Cloud resources cost money the moment they exist, so this doesn't stay up longer than it needs to for a demo:
+A Cloud Router and Cloud NAT give the private subnet outbound internet access without giving anything a public address.
 
-```bash
-terraform destroy
-```
+## Step 3 - Storage Bucket
 
-Confirm the prompt, then double-check the GCP console that the network, subnet, router, and bucket are actually gone — `terraform destroy` finishing without error is a good sign, not a guarantee.
+The bucket has uniform access control and public access blocked. Terraform uploads four site files into it: `index.html`, `404.html`, `style.css` and `images.jpg`.
+
+![GCS bucket objects](Images/05-gcs-bucket-objects.png "GCS bucket contents")
+
+## Step 4 - Local File
+
+A small `local_file` resource writes `favorite_food.txt` on the machine running Terraform. It's a simple way to show that Terraform can manage things outside of any cloud provider.
+
+## Step 5 - Deploy with Terraform
+
+Run these commands in order:
+
+* `terraform init` sets up the providers and the remote state backend
+* `terraform validate` checks the code for mistakes
+* `terraform plan` previews what will change
+* `terraform apply` builds it
+
+![terraform init output](Images/01-terraform-init.png "terraform init")
+![terraform validate output](Images/02-terraform-validate.png "terraform validate")
+![terraform plan output](Images/03-terraform-plan.png "terraform plan")
+![terraform apply complete](Images/04-terraform-apply-complete.png "terraform apply")
+
+## Step 6 - Output
+
+The project outputs the VPC name, so scripts or other Terraform modules can use it without hardcoding it. Running `terraform output` prints `blacksuperman`.
+
+![terraform output vpc_name](Images/06-terraform-output-vpc-name.png "vpc_name output")
+
+## Errors
+
+* The site's `index.html` points to `image.jpg`, but the uploaded file is `images.jpg`, so the image doesn't load.
+* The bucket is private, so it stores the site files but doesn't serve them to the public.
+
+## Deliverables
+
+* A working GCP network, router, NAT, disk and storage bucket, all created from code
+* Terraform state stored remotely in Cloud Storage
+* Screenshots of each step in the `Images/` folder
+
+## Final Step - Teardown
+
+Cloud resources cost money, so I don't leave this running.
+
+1. Run `terraform destroy`.
+2. Confirm with `yes`.
+3. Check the GCP console to make sure everything is gone.
 
 ## Author
 

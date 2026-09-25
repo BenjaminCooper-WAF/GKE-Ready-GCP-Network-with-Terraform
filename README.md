@@ -19,24 +19,6 @@ I built a Google Cloud network using only Terraform, so the whole thing can be c
 
 ![Architecture diagram](Images/gcp-gke-network-poster-dark.png "GCP GKE-Ready Network architecture")
 
-## Project Layout
-
-The Terraform code is split into numbered files, one per concern:
-
-| File | What it does |
-| --- | --- |
-| `1-backend.tf` | Stores Terraform state in the `terraform-gke-benji` GCS bucket under `terraform/state` |
-| `2-vpc.tf` | Enables the Compute and Kubernetes Engine APIs, then creates the `blacksuperman` VPC |
-| `3-subnets.tf` | Creates `private-subnet` with GKE pod and service ranges |
-| `4-providers.tf` | Pins the `google` (~> 5.0) and `local` (~> 2.5) providers; sets project and region |
-| `5-local.tf` | Writes `favorite_food.txt` with the `local` provider |
-| `6-main.tf` | Creates the private `benji2dmax-static` bucket and uploads the site files |
-| `7-output.tf` | Outputs `vpc_name` |
-| `8-router.tf` | Creates the Cloud Router and Cloud NAT |
-| `9-grafana.tf` | Creates the 10 GB `grafana-disk` |
-| `website/` | Static site files uploaded to the bucket |
-| `Images/` | Screenshots and the architecture diagram |
-
 ## Checkpoints
 
 1. [Prerequisites](#prerequisites)
